@@ -1,41 +1,67 @@
 //create web server
-// 1. load modules
-var express = require('express');
-var app = express();
-var bodyParser = require('body-parser');
-var router = express.Router();
+var http = require('http');
+//create url parser
+var url = require('url');
+//create querystring parser
+var querystring = require('querystring');
+//create file system
 var fs = require('fs');
+//create path
 var path = require('path');
-var db = require('./db');
-var util = require('./util');
-var async = require('async');
+//create mime type
+var mime = require('mime');
+//create cache
+var cache = {};
 
-// 2. set port
-var port = process.env.PORT || 3000;
+function send404(response) {
+	response.writeHead(404, {'Content-Type': 'text/plain'});
+	response.write('Error 404: resource not found');
+	response.end();
+}
 
-// 3. set middleware
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-app.use(express.static(__dirname + '/public'));
+function sendFile(response, filePath, fileContents) {
+	response.writeHead(200, {'Content-Type': mime.lookup(path.basename(filePath))});
+	response.end(fileContents);
+}
 
-// 4. set router
-router.route('/comments')
-	.get(function(req, res) {
-		fs.readFile(__dirname + '/public/data/comments.json', function(err, data) {
-			if (err) {
-				res.status(500).send(err);
-				return;
+function serveStatic(response, cache, absPath) {
+	if (cache[absPath]) { //check if file is cached in memory
+		sendFile(response, absPath, cache[absPath]); //serve file from memory
+	} else {
+		fs.exists(absPath, function(exists) { //check if file exists
+			if (exists) {
+				fs.readFile(absPath, function(err, data) { //read file from disk
+					if (err) {
+						send404(response);
+					} else {
+						cache[absPath] = data; //cache file in memory
+						sendFile(response, absPath, data); //serve file read from disk
+					}
+				});
+			} else {
+				send404(response); //send 404 response
 			}
-			var comments = JSON.parse(data);
-			res.json(comments);
 		});
-	})
-	.post(function(req, res) {
-		fs.readFile(__dirname + '/public/data/comments.json', function(err, data) {
-			if (err) {
-				res.status(500).send(err);
-				return;
-			}
-			var comments = JSON.parse(data);
-			var newComment = {
-				id: Date.now(),
+	}
+}
+
+//create HTTP server
+var server = http.createServer(function(request, response) {
+	var filePath = false;
+	
+	if (request.url == '/') {
+		filePath = 'public/index.html'; //determine HTML file to be served by default
+	} else {
+		filePath = 'public' + request.url; //translate URL path to relative file path
+	}
+	var absPath = './' + filePath;
+	serveStatic(response, cache, absPath); //serve static file
+});
+
+server.listen(3000, function() {
+	console.log("Server listening on port 3000.");
+});
+
+//create socket.io server
+var chatServer = require('./lib/chat_server');
+chatServer.listen(server);
