@@ -1,67 +1,48 @@
-//create web server
-var http = require('http');
-//create url parser
-var url = require('url');
-//create querystring parser
-var querystring = require('querystring');
-//create file system
-var fs = require('fs');
-//create path
-var path = require('path');
-//create mime type
-var mime = require('mime');
-//create cache
-var cache = {};
+// Create web server
 
-function send404(response) {
-	response.writeHead(404, {'Content-Type': 'text/plain'});
-	response.write('Error 404: resource not found');
-	response.end();
-}
+const express = require('express');
+const bodyParser = require('body-parser');
+const { randomBytes } = require('crypto');
+const cors = require('cors');
 
-function sendFile(response, filePath, fileContents) {
-	response.writeHead(200, {'Content-Type': mime.lookup(path.basename(filePath))});
-	response.end(fileContents);
-}
+// Create express app
+const app = express();
 
-function serveStatic(response, cache, absPath) {
-	if (cache[absPath]) { //check if file is cached in memory
-		sendFile(response, absPath, cache[absPath]); //serve file from memory
-	} else {
-		fs.exists(absPath, function(exists) { //check if file exists
-			if (exists) {
-				fs.readFile(absPath, function(err, data) { //read file from disk
-					if (err) {
-						send404(response);
-					} else {
-						cache[absPath] = data; //cache file in memory
-						sendFile(response, absPath, data); //serve file read from disk
-					}
-				});
-			} else {
-				send404(response); //send 404 response
-			}
-		});
-	}
-}
+// Use middleware
+app.use(bodyParser.json());
+app.use(cors());
 
-//create HTTP server
-var server = http.createServer(function(request, response) {
-	var filePath = false;
-	
-	if (request.url == '/') {
-		filePath = 'public/index.html'; //determine HTML file to be served by default
-	} else {
-		filePath = 'public' + request.url; //translate URL path to relative file path
-	}
-	var absPath = './' + filePath;
-	serveStatic(response, cache, absPath); //serve static file
+// Create comments object
+const commentsByPostId = {};
+
+// Get comments by post id
+app.get('/posts/:id/comments', (req, res) => {
+  // Send comments
+  res.send(commentsByPostId[req.params.id] || []);
 });
 
-server.listen(3000, function() {
-	console.log("Server listening on port 3000.");
+// Create comment by post id
+app.post('/posts/:id/comments', (req, res) => {
+  // Generate id
+  const commentId = randomBytes(4).toString('hex');
+
+  // Get comment data
+  const { content } = req.body;
+
+  // Get comments
+  const comments = commentsByPostId[req.params.id] || [];
+
+  // Add comment to comments
+  comments.push({ id: commentId, content });
+
+  // Add comments to commentsByPostId
+  commentsByPostId[req.params.id] = comments;
+
+  // Send comment
+  res.status(201).send(comments);
 });
 
-//create socket.io server
-var chatServer = require('./lib/chat_server');
-chatServer.listen(server);
+// Listen on port 4001
+app.listen(4001, () => {
+  console.log('Listening on 4001');
+});
